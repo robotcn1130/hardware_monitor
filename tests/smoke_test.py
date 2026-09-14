@@ -15,6 +15,14 @@ import os
 import sys
 import traceback
 
+# CI 上 stdout 接管道时编码取自系统区域设置（英文 runner 是 cp1252），
+# 结果里的中文会 UnicodeEncodeError、把通过判成失败。强制 UTF-8 输出。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
