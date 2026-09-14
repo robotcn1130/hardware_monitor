@@ -83,6 +83,14 @@ import os
 import subprocess
 import sys
 
+# 同 build.py：CI 上 stdout 接管道，编码取自区域设置（英文 runner 是 cp1252），
+# 中文 print 会 UnicodeEncodeError。强制 UTF-8 输出。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # 时间戳服务器：证书过期后签名依然有效，必须要
 DEFAULT_TS = "http://timestamp.digicert.com"
 

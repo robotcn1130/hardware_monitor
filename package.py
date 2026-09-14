@@ -33,6 +33,14 @@ import os
 import sys
 import zipfile
 
+# 同 build.py：CI 上 stdout 接管道，编码取自区域设置（英文 runner 是 cp1252），
+# 中文 print 会 UnicodeEncodeError。强制 UTF-8 输出。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 APP_NAME = "硬件监控"

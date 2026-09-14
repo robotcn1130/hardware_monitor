@@ -22,6 +22,15 @@ import sys
 import shutil
 import subprocess
 
+# stdout 接管道时（CI 就是），编码取自系统区域设置，英文 runner 上是 cp1252，
+# 下面那些中文 print 会抛 UnicodeEncodeError 把构建判成失败。强制 UTF-8 输出，
+# 编不出来的字符替换掉，别让日志编码影响构建结果。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 APP_NAME = "硬件监控"
