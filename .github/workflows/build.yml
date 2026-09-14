@@ -63,6 +63,9 @@ jobs:
     name: 自动化测试（参考，不阻塞）
     runs-on: windows-latest
     continue-on-error: true
+    # 没有桌面会话时 tkinter 可能一直等下去（不是失败，是挂住），
+    # 给个上限免得每次提交都留一个跑不完的作业。
+    timeout-minutes: 10
     steps:
       - name: 取出代码
         uses: actions/checkout@v7
