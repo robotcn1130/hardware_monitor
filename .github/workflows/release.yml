@@ -1,0 +1,113 @@
+name: 发布（含代码签名）
+
+# 推一个形如 v2.1.0 的 tag 就会走完全程：
+#   构建 → 上传未签名产物 → 送 SignPath 签名 → 压成分发包 → 建 Release
+#
+# 为什么必须走这里、不能在本机打完包直接上传：
+#   SignPath 的 GitHub 连接器只会为「由 GitHub 工作流产出的产物」签名。
+#   本机手动上传的包没有可校验的构建来源，签名环节会失效。
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: 构建 → 签名 → 发布
+    runs-on: windows-latest
+
+    # SignPath 密钥还没配好时，签名那一步自动跳过，发布照样能跑（产物是未签名的）。
+    # 这里绕一层 env 是因为 secrets 不能直接用在 step 的 if 条件里。
+    env:
+      SIGNPATH_CONFIGURED: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+
+    steps:
+      - name: 取出代码
+        uses: actions/checkout@v7
+
+      - name: 安装 Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+          cache: pip
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: 打包（此时还没有签名）
+        run: python build.py
+
+      - name: 核对版本号与 tag 是否一致
+        run: |
+          $ver = python -c "import hm_utils; print(hm_utils.APP_VERSION)"
+          $tag = "${{ github.ref_name }}".TrimStart('v')
+          Write-Host "代码里的版本号 = $ver，tag = $tag"
+          if ($ver -ne $tag) {
+            Write-Host "::warning::版本号($ver) 与 tag($tag) 不一致，请检查 hm_utils.APP_VERSION"
+          }
+
+      # 必须先传成 GitHub 工作流产物，SignPath 只从这里取
+      - name: 上传未签名产物
+        id: upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-windows
+          path: dist/硬件监控/
+          if-no-files-found: error
+          overwrite: true
+
+      - name: 提交签名请求（SignPath Foundation）
+        if: env.SIGNPATH_CONFIGURED == 'true'
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIG_SLUG }}
+          github-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: 提醒未配置签名
+        if: env.SIGNPATH_CONFIGURED != 'true'
+        run: |
+          Write-Host "::warning::未配置 SIGNPATH_API_TOKEN，本次发布的是**未签名**产物。"
+
+      - name: 压成分发包
+        run: |
+          # 签过名就用签名后的产物，没签就用原始产物
+          if (Test-Path 'signed\硬件监控.exe') {
+            $src = 'signed'
+          } elseif (Test-Path 'signed\硬件监控\硬件监控.exe') {
+            $src = 'signed\硬件监控'
+          } else {
+            $src = 'dist\硬件监控'
+          }
+          Write-Host "打包来源：$src"
+          python package.py --src $src --out 硬件监控.zip
+
+      - name: 建 Release 并附上分发包
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          Write-Host "发布 $tag"
+          gh release create $tag 硬件监控.zip `
+            --title "硬件监控 $tag" `
+            --generate-notes
+
+      # 签名结果一并留档，方便核对签名者是不是 SignPath Foundation
+      - name: 上传已签名产物（留档）
+        if: env.SIGNPATH_CONFIGURED == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: signed-windows
+          path: signed/
+          if-no-files-found: warn
+          overwrite: true

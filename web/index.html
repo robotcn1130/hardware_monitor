@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>硬件监控 · 轻量硬件实时悬浮窗</title>
+<meta name="description" content="硬件监控 —— 免安装、拷贝即用的 Windows 硬件状态悬浮窗。实时显示 CPU、内存、磁盘、网络、显卡与游戏 FPS。">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌡️</text></svg>">
+<style>
+  :root{
+    --bg:#080b10;
+    --bg-2:#0d1218;
+    --panel:#12161c;
+    --panel-2:#1b222c;
+    --line:#232c38;
+    --text:#dfe7ef;
+    --muted:#8b98a5;
+    --accent:#7fe6c4;
+    --accent-2:#4fb99a;
+    --accent-deep:#2f6f5e;
+    --warn:#ffcf6b;
+    --pink:#ff8fb1;
+    --radius:16px;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:"Microsoft YaHei UI","PingFang SC","Hiragino Sans GB","Source Han Sans SC",system-ui,-apple-system,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    line-height:1.7;
+    overflow-x:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{background:var(--accent-deep);color:#fff}
+
+  /* ---------- 背景光效 ---------- */
+  .orbs{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none}
+  .orb{position:absolute;border-radius:50%;filter:blur(90px);opacity:.5}
+  .orb.a{width:520px;height:520px;background:radial-gradient(circle,#2f6f5e,transparent 70%);top:-160px;left:-120px}
+  .orb.b{width:460px;height:460px;background:radial-gradient(circle,#1d4e6e,transparent 70%);top:220px;right:-140px}
+  .orb.c{width:420px;height:420px;background:radial-gradient(circle,#4a3a6b,transparent 70%);bottom:6%;left:22%}
+  .grid-bg{
+    position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.35;
+    background-image:linear-gradient(rgba(127,230,196,.05) 1px,transparent 1px),
+                     linear-gradient(90deg,rgba(127,230,196,.05) 1px,transparent 1px);
+    background-size:56px 56px;
+    mask-image:radial-gradient(ellipse 80% 60% at 50% 0%,#000 20%,transparent 75%);
+  }
+  .wrap{position:relative;z-index:1;max-width:1160px;margin:0 auto;padding:0 24px}
+
+  /* ---------- 导航 ---------- */
+  nav{
+    position:sticky;top:0;z-index:50;
+    backdrop-filter:blur(14px);
+    background:rgba(8,11,16,.72);
+    border-bottom:1px solid rgba(35,44,56,.9);
+  }
+  .nav-in{display:flex;align-items:center;justify-content:space-between;height:64px}
+  .logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;letter-spacing:.5px}
+  .logo .dot{
+    width:30px;height:30px;border-radius:9px;
+    background:linear-gradient(135deg,var(--accent),var(--accent-deep));
+    display:grid;place-items:center;font-size:16px;
+    box-shadow:0 0 22px rgba(127,230,196,.35);
+  }
+  .nav-links{display:flex;gap:28px;font-size:14px;color:var(--muted)}
+  .nav-links a{color:inherit;text-decoration:none;transition:color .2s}
+  .nav-links a:hover{color:var(--accent)}
+  .nav-cta{
+    padding:8px 18px;border-radius:999px;font-size:13.5px;font-weight:600;
+    background:linear-gradient(135deg,var(--accent),var(--accent-2));
+    color:#08130f;text-decoration:none;
+    box-shadow:0 6px 20px rgba(127,230,196,.28);
+    transition:transform .2s,box-shadow .2s;
+  }
+  .nav-cta:hover{transform:translateY(-2px);box-shadow:0 10px 28px rgba(127,230,196,.42)}
+  @media(max-width:820px){.nav-links{display:none}}
+
+  /* ---------- HERO ---------- */
+  header{padding:88px 0 70px;text-align:center}
+  .badge{
+    display:inline-flex;align-items:center;gap:8px;
+    padding:6px 15px;border-radius:999px;font-size:12.5px;
+    background:rgba(127,230,196,.08);
+    border:1px solid rgba(127,230,196,.24);
+    color:var(--accent);letter-spacing:.4px;
+  }
+  .badge i{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.8)}}
+  h1{
+    font-size:clamp(38px,6.2vw,66px);line-height:1.15;
+    margin:26px 0 18px;font-weight:800;letter-spacing:-1.5px;
+  }
+  h1 .grad{
+    background:linear-gradient(120deg,var(--accent) 10%,#8fd7ff 45%,var(--pink) 90%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .sub{max-width:640px;margin:0 auto;color:var(--muted);font-size:17px}
+  .sub b{color:var(--text);font-weight:600}
+  .hero-btns{display:flex;gap:14px;justify-content:center;margin-top:34px;flex-wrap:wrap}
+  .btn{
+    display:inline-flex;align-items:center;gap:9px;
+    padding:13px 28px;border-radius:12px;font-size:15px;font-weight:600;
+    text-decoration:none;transition:transform .2s,box-shadow .2s,background .2s;
+  }
+  .btn-primary{
+    background:linear-gradient(135deg,var(--accent),var(--accent-2));
+    color:#08130f;box-shadow:0 10px 30px rgba(127,230,196,.3);
+  }
+  .btn-primary:hover{transform:translateY(-3px);box-shadow:0 16px 40px rgba(127,230,196,.45)}
+  .btn-ghost{
+    background:rgba(255,255,255,.04);color:var(--text);
+    border:1px solid var(--line);
+  }
+  .btn-ghost:hover{background:rgba(255,255,255,.08);transform:translateY(-3px)}
+  .hero-meta{margin-top:22px;font-size:13px;color:var(--muted);display:flex;gap:20px;justify-content:center;flex-wrap:wrap}
+  .hero-meta span{display:flex;align-items:center;gap:6px}
+  .hero-meta svg{color:var(--accent)}
+
+  /* ---------- 悬浮窗效果图 ---------- */
+  .showcase{margin-top:58px;position:relative}
+  .showcase::before{
+    content:"";position:absolute;inset:-40px -60px;z-index:-1;
+    background:radial-gradient(ellipse at center,rgba(127,230,196,.1),transparent 65%);
+  }
+  /* 悬浮窗卡片：与程序一致，1px 直线描边、直角、无圆角 */
+  .win{
+    display:inline-block;text-align:left;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:0;
+    box-shadow:0 22px 60px rgba(0,0,0,.55);
+    font-size:13.5px;font-variant-numeric:tabular-nums;
+    overflow:hidden;position:relative;
+    animation:float 6s ease-in-out infinite;
+  }
+  @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
+  .win.v{width:max-content;max-width:min(600px,100%)}
+  .win.h{width:max-content;max-width:100%}
+  .win-bar{
+    height:30px;display:flex;align-items:center;gap:6px;padding:0 12px;
+    background:var(--panel-2);border-bottom:1px solid var(--line);
+    cursor:default;
+  }
+  .win-bar .lv{width:9px;height:9px;border-radius:50%;flex:0 0 9px}
+  .win-bar .t{
+    margin-left:14px;font-size:12px;color:var(--muted);letter-spacing:.4px;
+    flex:1;
+  }
+  .win-body{padding:11px 14px 13px}
+  .row{display:flex;align-items:baseline;gap:10px;padding:3.5px 0;white-space:nowrap}
+  .row .k{color:var(--muted);min-width:74px;font-size:12px}
+  .row .v{color:var(--text);font-weight:700;font-size:13.3px}
+  .row.gpu .v{font-size:12px;font-weight:700;color:var(--accent)}
+  .row.fps .v{color:var(--warn)}
+  .row.fps .tag{
+    font-size:10.7px;font-weight:400;color:var(--muted);
+    margin-left:6px;
+  }
+  .sep{height:1px;background:var(--line);margin:5px 0}
+
+  /* ---------- 通用区块 ---------- */
+  section{padding:76px 0;position:relative}
+  .sec-head{text-align:center;max-width:660px;margin:0 auto 46px}
+  .sec-tag{
+    font-size:12.5px;letter-spacing:2.5px;text-transform:uppercase;
+    color:var(--accent);font-weight:700;margin-bottom:14px;
+  }
+  h2{font-size:clamp(27px,3.8vw,40px);font-weight:800;letter-spacing:-.8px;line-height:1.25}
+  .sec-head p{color:var(--muted);margin-top:14px;font-size:15.5px}
+
+  /* ---------- 指标卡 ---------- */
+  .metrics{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(178px,1fr));
+    gap:14px;
+  }
+  .m-card{
+    background:linear-gradient(180deg,rgba(27,34,44,.62),rgba(18,22,28,.62));
+    border:1px solid var(--line);border-radius:var(--radius);
+    padding:20px 18px;transition:transform .25s,border-color .25s,box-shadow .25s;
+    position:relative;overflow:hidden;
+  }
+  .m-card::after{
+    content:"";position:absolute;top:0;left:0;right:0;height:1px;
+    background:linear-gradient(90deg,transparent,rgba(127,230,196,.5),transparent);
+    opacity:0;transition:opacity .25s;
+  }
+  .m-card:hover{transform:translateY(-5px);border-color:rgba(127,230,196,.35);box-shadow:0 16px 36px rgba(0,0,0,.4)}
+  .m-card:hover::after{opacity:1}
+  .m-ico{font-size:22px;margin-bottom:10px;display:block}
+  .m-card h3{font-size:15px;font-weight:700;margin-bottom:5px}
+  .m-card p{font-size:12.8px;color:var(--muted);line-height:1.6}
+
+  /* ---------- 功能亮点 ---------- */
+  .feats{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px}
+  .feat{
+    background:linear-gradient(180deg,rgba(27,34,44,.5),rgba(18,22,28,.5));
+    border:1px solid var(--line);border-radius:var(--radius);
+    padding:26px 24px;transition:transform .25s,border-color .25s;
+  }
+  .feat:hover{transform:translateY(-4px);border-color:rgba(127,230,196,.3)}
+  .feat .tag{
+    display:inline-block;font-size:11px;font-weight:700;letter-spacing:1px;
+    color:var(--accent);background:rgba(127,230,196,.09);
+    border:1px solid rgba(127,230,196,.22);
+    padding:3px 10px;border-radius:6px;margin-bottom:13px;
+  }
+  .feat h3{font-size:17.5px;font-weight:700;margin-bottom:9px}
+  .feat p{font-size:14px;color:var(--muted)}
+  .feat ul{margin-top:12px;font-size:13.5px;color:var(--muted);list-style:none}
+  .feat li{padding-left:20px;position:relative;margin-top:6px}
+  .feat li::before{
+    content:"";position:absolute;left:3px;top:9px;
+    width:6px;height:6px;border-radius:50%;background:var(--accent-2);
+  }
+
+  /* ---------- 截图墙 ---------- */
+  .shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:22px}
+  .shot{
+    background:linear-gradient(180deg,rgba(27,34,44,.5),rgba(18,22,28,.5));
+    border:1px solid var(--line);border-radius:var(--radius);
+    padding:22px;transition:border-color .25s,transform .25s;
+  }
+  .shot:hover{border-color:rgba(127,230,196,.28);transform:translateY(-3px)}
+  .shot h3{font-size:15.5px;margin-bottom:4px}
+  .shot .cap{font-size:13px;color:var(--muted);margin-bottom:16px}
+  .shot .stage{
+    background:#0a0e13;border:1px solid var(--line);border-radius:10px;
+    padding:16px;display:flex;justify-content:center;align-items:center;
+    min-height:150px;overflow:hidden;
+  }
+  .shot .win{animation:none;font-size:12.5px}
+  .shot .win.v{width:100%;max-width:300px}
+  .shot .win .row{white-space:normal;align-items:flex-start}
+  .shot .win .row .k{min-width:64px}
+  /* 横版内容本就很宽，跨两列才放得下真实的一行形态 */
+  .shot.wide{grid-column:1/-1}
+  .shot.wide .win.h{max-width:100%}
+  .shot.wide .win.h .row{white-space:nowrap;align-items:baseline}
+
+  /* 菜单样式（程序为直线矩形，无圆角） */
+  .menu{
+    background:var(--panel-2);border:1px solid var(--line);border-radius:0;
+    padding:5px;font-size:12.7px;min-width:190px;
+    box-shadow:0 12px 34px rgba(0,0,0,.55);
+  }
+  .mi{padding:6px 12px;border-radius:0;display:flex;align-items:center;gap:9px;white-space:nowrap}
+  .mi:hover{background:#283c40}
+  .mi .ar{margin-left:auto;color:var(--muted);font-size:10px}
+  .mi .ck{
+    width:13px;height:13px;border-radius:0;flex:0 0 13px;
+    border:1px solid #4a5866;display:grid;place-items:center;
+    font-size:9px;font-weight:700;color:#08130f;
+  }
+  .mi .ck.on{background:var(--accent);border-color:var(--accent)}
+  .mi .rd{
+    width:13px;height:13px;border-radius:50%;flex:0 0 13px;
+    border:1px solid #4a5866;display:grid;place-items:center;
+  }
+  .mi .rd.on{border-color:var(--accent)}
+  .mi .rd.on::after{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent)}
+  .mdiv{height:1px;background:var(--line);margin:5px 8px}
+
+  /* 弹窗样式（程序为直线矩形，无圆角） */
+  .dlg{
+    background:var(--panel);border:1px solid var(--line);border-radius:0;
+    width:100%;max-width:328px;overflow:hidden;
+    box-shadow:0 16px 44px rgba(0,0,0,.55);
+  }
+  .dlg.narrow{max-width:300px}
+  .dlg-bar{
+    height:30px;display:flex;align-items:center;padding:0 12px;
+    background:var(--panel-2);border-bottom:1px solid var(--line);
+    font-size:11.5px;color:var(--muted);letter-spacing:.4px;
+  }
+  .dlg-body{padding:13px 14px}
+  .dlg-h{font-size:12px;font-weight:700;color:var(--accent);letter-spacing:.3px;margin:2px 0 7px}
+  .dlg-row{
+    display:flex;align-items:center;gap:10px;padding:4.5px 0 4.5px 6px;font-size:12.4px;color:#cfd8e3;
+  }
+  .dlg-row .ck{
+    width:13px;height:13px;border-radius:0;flex:0 0 13px;
+    border:1px solid #4a5866;display:grid;place-items:center;
+    font-size:9px;font-weight:700;color:#08130f;
+  }
+  .dlg-row .ck.on{background:var(--accent);border-color:var(--accent)}
+  .dlg-row .rd{
+    width:13px;height:13px;border-radius:50%;flex:0 0 13px;
+    border:1px solid #4a5866;display:grid;place-items:center;
+  }
+  .dlg-row .rd.on{border-color:var(--accent)}
+  .dlg-row .rd.on::after{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent)}
+  .dlg-row.sel{background:#254b41;border-radius:0}
+  .dlg-row .drag{color:#4a5866;font-size:13px;letter-spacing:-2px;flex:0 0 16px}
+  .dlg-btns{display:flex;justify-content:flex-end;gap:8px;margin-top:13px}
+  .mini{
+    font-size:11px;padding:4px 15px;border-radius:0;border:none;font-weight:400;
+  }
+  .mini.ok{background:var(--accent-deep);color:#fff}
+  .mini.cancel{background:#2b3542;color:#cfd8e3}
+
+  /* FPS 列表 */
+  .fpslist{width:100%}
+  .fpslist .fl-head{
+    font-size:11px;color:var(--muted);margin-bottom:8px;
+  }
+  .fl-row{
+    font-size:12.2px;padding:5.5px 8px;border-radius:0;
+    display:flex;gap:8px;align-items:baseline;min-height:26px;
+  }
+  .fl-row:nth-child(even){background:#151a21}
+  .fl-row.sel{background:var(--accent-deep)}
+  .fl-row .n{color:#cfd8e3}
+  .fl-row .f{color:var(--warn);font-weight:700;font-size:11.4px;margin-left:auto}
+  .fl-row .t{color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .fl-opts{display:flex;align-items:center;gap:14px;font-size:12.2px;color:#cfd8e3;margin-top:11px;padding-top:11px;border-top:1px solid var(--line)}
+  .fl-opts .ck{
+    width:13px;height:13px;border-radius:0;flex:0 0 13px;
+    border:1px solid #4a5866;display:inline-grid;place-items:center;
+    font-size:9px;font-weight:700;color:#08130f;
+  }
+  .fl-opts .ck.on{background:var(--accent);border-color:var(--accent)}
+
+  /* ---------- 步骤 ---------- */
+  .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:18px;counter-reset:s}
+  .step{
+    background:linear-gradient(180deg,rgba(27,34,44,.5),rgba(18,22,28,.5));
+    border:1px solid var(--line);border-radius:var(--radius);padding:26px 22px;position:relative;
+  }
+  .step::before{
+    counter-increment:s;content:counter(s,decimal-leading-zero);
+    font-size:30px;font-weight:800;letter-spacing:-1px;
+    background:linear-gradient(135deg,var(--accent),var(--accent-2));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    display:block;margin-bottom:10px;
+  }
+  .step h3{font-size:16px;margin-bottom:7px}
+  .step p{font-size:13.5px;color:var(--muted)}
+
+  /* ---------- 规格表 ---------- */
+  .specs{
+    border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;
+    background:rgba(18,22,28,.55);
+  }
+  .spec-row{display:grid;grid-template-columns:180px 1fr;border-bottom:1px solid var(--line)}
+  .spec-row:last-child{border-bottom:none}
+  .spec-row dt{
+    padding:15px 22px;font-size:13.5px;color:var(--muted);
+    background:rgba(27,34,44,.45);font-weight:600;
+  }
+  .spec-row dd{padding:15px 22px;font-size:13.8px;color:var(--text)}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{
+    font-size:12.2px;padding:4px 11px;border-radius:999px;
+    background:rgba(127,230,196,.08);border:1px solid rgba(127,230,196,.2);
+    color:var(--accent);
+  }
+  @media(max-width:620px){
+    .spec-row{grid-template-columns:1fr}
+    .spec-row dt{padding-bottom:6px}
+  }
+
+  /* ---------- 更新日志 ---------- */
+  .log{
+    border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;
+    background:rgba(18,22,28,.55);
+  }
+  .log-item{padding:24px 26px;border-bottom:1px solid var(--line)}
+  .log-item:last-child{border-bottom:none}
+  .log-hd{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+  .log-ver{font-size:16.5px;font-weight:800;color:var(--accent);letter-spacing:.3px}
+  .log-date{font-size:12.5px;color:var(--muted)}
+  .log-tag{
+    font-size:11px;padding:2px 10px;border-radius:999px;
+    background:rgba(127,230,196,.12);border:1px solid rgba(127,230,196,.22);
+    color:var(--accent);font-weight:600;
+  }
+  .log-tag.old{background:rgba(139,152,165,.1);border-color:var(--line);color:var(--muted)}
+  .log-item code{
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:12.5px;padding:2px 7px;border-radius:6px;
+    background:rgba(127,230,196,.1);border:1px solid var(--line);color:var(--accent);
+  }
+  .log-item ul{list-style:none;font-size:14px;color:var(--muted);line-height:1.9}
+  .log-item li{padding-left:16px;position:relative}
+  .log-item li::before{
+    content:"";position:absolute;left:0;top:11px;width:5px;height:5px;
+    border-radius:50%;background:var(--accent-2);
+  }
+  .log-item li b{color:var(--text);font-weight:600}
+  @media(max-width:620px){ .log-item{padding:20px 18px} }
+
+  /* ---------- CTA ---------- */
+  .cta-box{
+    position:relative;border-radius:24px;overflow:hidden;text-align:center;
+    padding:58px 30px;
+    background:linear-gradient(135deg,rgba(47,111,94,.35),rgba(29,78,110,.3) 55%,rgba(74,58,107,.3));
+    border:1px solid rgba(127,230,196,.22);
+  }
+  .cta-box::before{
+    content:"";position:absolute;inset:0;
+    background-image:linear-gradient(rgba(127,230,196,.06) 1px,transparent 1px),
+                     linear-gradient(90deg,rgba(127,230,196,.06) 1px,transparent 1px);
+    background-size:40px 40px;
+    mask-image:radial-gradient(ellipse at center,#000,transparent 72%);
+  }
+  .cta-box>*{position:relative}
+  .cta-box h2{margin-bottom:14px}
+  .cta-box p{color:#b9c6d3;max-width:520px;margin:0 auto 28px;font-size:15.5px}
+
+  /* ---------- 页脚 ---------- */
+  footer{
+    border-top:1px solid var(--line);padding:38px 0;text-align:center;
+    color:var(--muted);font-size:13px;position:relative;z-index:1;
+  }
+  footer .fl{display:flex;gap:20px;justify-content:center;margin-bottom:14px;flex-wrap:wrap}
+  footer a{color:var(--muted);text-decoration:none;transition:color .2s}
+  footer a:hover{color:var(--accent)}
+
+  /* ---------- 滚动出现动画 ---------- */
+  .reveal{opacity:0;transform:translateY(26px);transition:opacity .7s cubic-bezier(.2,.7,.3,1),transform .7s cubic-bezier(.2,.7,.3,1)}
+  .reveal.in{opacity:1;transform:none}
+</style>
+</head>
+<body>
+
+<div class="orbs">
+  <div class="orb a"></div>
+  <div class="orb b"></div>
+  <div class="orb c"></div>
+</div>
+<div class="grid-bg"></div>
+
+<nav>
+  <div class="wrap nav-in">
+    <div class="logo"><span class="dot">🌡️</span>硬件监控</div>
+    <div class="nav-links">
+      <a href="#metrics">监控指标</a>
+      <a href="#features">功能亮点</a>
+      <a href="#shots">界面预览</a>
+      <a href="#start">快速开始</a>
+      <a href="#specs">运行环境</a>
+      <a href="#faq">常见问题</a>
+      <a href="#changelog">更新日志</a>
+      <a href="https://github.com/robotcn1130/hardware_monitor" target="_blank" rel="noopener">源码</a>
+    </div>
+    <a class="nav-cta" href="#download">立即下载</a>
+  </div>
+</nav>
+
+<header class="wrap">
+  <span class="badge"><i></i>免安装 · 拷贝即用 · 解压就能跑</span>
+  <h1>桌面上的<br><span class="grad">硬件状态悬浮窗</span></h1>
+  <p class="sub">
+    实时掌握 <b>CPU、内存、磁盘、网络、显卡</b> 与 <b>游戏 FPS</b>。
+    一个轻量小窗，放在屏幕角落，随时瞟一眼就知道机器状态。
+  </p>
+  <div class="hero-btns">
+    <a class="btn btn-primary" href="#download">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      下载 Windows 版
+    </a>
+    <a class="btn btn-ghost" href="#shots">查看界面预览</a>
+  </div>
+  <div class="hero-meta">
+    <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>无需安装</span>
+    <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>不写注册表</span>
+    <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>无广告无联网</span>
+    <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>托盘常驻</span>
+    <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>当前 v2.1.0</span>
+  </div>
+
+  <!-- 主效果图：竖版悬浮窗 -->
+  <div class="showcase reveal">
+    <div class="win v">
+      <div class="win-bar">
+        <span class="lv" style="background:#ff5f57"></span>
+        <span class="lv" style="background:#febc2e"></span>
+        <span class="lv" style="background:#28c840"></span>
+        <span class="t">硬件监控 · 竖版</span>
+      </div>
+      <div class="win-body">
+        <div class="row"><span class="k">CPU 使用率</span><span class="v">12%&nbsp;&nbsp;(16 核)</span></div>
+        <div class="row"><span class="k">CPU 温度</span><span class="v">46°C</span></div>
+        <div class="row"><span class="k">内存</span><span class="v">58%&nbsp;&nbsp;(9.3GB / 16.0GB)</span></div>
+        <div class="row"><span class="k">磁盘</span><span class="v">C: 3%&nbsp;&nbsp;(412GB 可用 / 953GB)<br>D: 27%&nbsp;&nbsp;(611GB 可用 / 1863GB)</span></div>
+        <div class="row"><span class="k">网络</span><span class="v">↓ 340KB/s&nbsp;&nbsp;&nbsp;↑ 12KB/s</span></div>
+        <div class="sep"></div>
+        <div class="row gpu"><span class="k">显卡</span><span class="v">占用 2%&nbsp;&nbsp;&nbsp;46°C&nbsp;&nbsp;&nbsp;显存 968/4096 MB&nbsp;&nbsp;&nbsp;风扇 34%&nbsp;&nbsp;&nbsp;功耗 5W&nbsp;&nbsp;&nbsp;频率 375MHz</span></div>
+        <div class="sep"></div>
+        <div class="row fps"><span class="k">FPS</span><span class="v">100 FPS<span class="tag">启动游戏.exe</span></span></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- 监控指标 -->
+<section id="metrics" class="wrap">
+  <div class="sec-head reveal">
+    <div class="sec-tag">Metrics</div>
+    <h2>十五项监控指标，按需勾选</h2>
+    <p>想要哪些就勾哪些，不想要的随时关掉，悬浮窗只显示你关心的内容。</p>
+  </div>
+  <div class="metrics">
+    <div class="m-card reveal"><span class="m-ico">🧠</span><h3>CPU 使用率</h3><p>实时占用百分比，一眼看出有没有跑满</p></div>
+    <div class="m-card reveal"><span class="m-ico">🌡️</span><h3>CPU 温度</h3><p>读底层传感器，高温及时察觉</p></div>
+    <div class="m-card reveal"><span class="m-ico">⚡</span><h3>CPU 频率</h3><p>当前主频，看睿频与降频情况</p></div>
+    <div class="m-card reveal"><span class="m-ico">💾</span><h3>内存</h3><p>整体内存占用比例</p></div>
+    <div class="m-card reveal"><span class="m-ico">🗄️</span><h3>磁盘</h3><p>各分区活动率与读写速度</p></div>
+    <div class="m-card reveal"><span class="m-ico">🌐</span><h3>网络</h3><p>实时上传 / 下载速率</p></div>
+    <div class="m-card reveal"><span class="m-ico">🎮</span><h3>显卡</h3><p>占用、温度、显存、风扇、功耗、频率</p></div>
+    <div class="m-card reveal"><span class="m-ico">📈</span><h3>FPS</h3><p>游戏帧率，可跟随前台或锁定进程</p></div>
+    <div class="m-card reveal"><span class="m-ico">⏳</span><h3>帧时间</h3><p>每帧平均耗时，比帧率更早暴露卡顿</p></div>
+    <div class="m-card reveal"><span class="m-ico">📉</span><h3>低帧 1% / 0.1%</h3><p>最慢那部分帧的帧率，卡顿的真正指标</p></div>
+    <div class="m-card reveal"><span class="m-ico">🧊</span><h3>硬盘温度</h3><p>多块盘取最热的一块，NVMe 尤其要看</p></div>
+    <div class="m-card reveal"><span class="m-ico">🔌</span><h3>主板温度</h3><p>机箱风道与供电区域的温度参考</p></div>
+    <div class="m-card reveal"><span class="m-ico">🌀</span><h3>系统风扇</h3><p>机箱风扇转速，确认散热有没有在工作</p></div>
+    <div class="m-card reveal"><span class="m-ico">🔋</span><h3>电池</h3><p>笔记本电量与充放电状态</p></div>
+    <div class="m-card reveal"><span class="m-ico">⏱️</span><h3>开机时长</h3><p>已运行多久，提醒该重启了</p></div>
+  </div>
+</section>
+
+<!-- 功能亮点 -->
+<section id="features" class="wrap">
+  <div class="sec-head reveal">
+    <div class="sec-tag">Features</div>
+    <h2>为「一直开着」而设计</h2>
+    <p>够小、够轻、够安静，放在角落不会打扰你。</p>
+  </div>
+  <div class="feats">
+    <div class="feat reveal">
+      <span class="tag">FPS</span>
+      <h3>游戏帧率，看得见</h3>
+      <p>基于 Intel PresentMon 采集真实帧率，可选择跟随前台游戏，或锁定指定程序。</p>
+      <ul>
+        <li>选择列表带进程名 + 实时帧率 + 窗口标题</li>
+        <li>可在帧率后附带「窗口标题 / 程序名」</li>
+        <li>两个都不勾，就只留一个干净的数字</li>
+      </ul>
+    </div>
+    <div class="feat reveal">
+      <span class="tag">FRAME</span>
+      <h3>卡顿看得见：帧时间与低帧</h3>
+      <p>平均帧率会掩盖卡顿，所以同时给出帧时间与 1% / 0.1% 低帧，两个都是判断「顺不顺」的关键。</p>
+      <ul>
+        <li>帧时间：每帧平均耗时，单位毫秒</li>
+        <li>1% / 0.1% 低帧：最慢那部分帧换算出的帧率</li>
+        <li>全程只做 ETW 观测，不注入游戏进程、不挂钩子</li>
+      </ul>
+    </div>
+    <div class="feat reveal">
+      <span class="tag">TREND</span>
+      <h3>历史曲线与高温告警</h3>
+      <p>每个指标都留有最近 90 次采样的走势，数值右侧的迷你折线一眼看出趋势。</p>
+      <ul>
+        <li>CPU / 显卡 / 硬盘温度、CPU 占用、内存都可设阈值</li>
+        <li>越界时整行变红，同时在托盘提醒一次</li>
+        <li>阈值可关可调，同一项不会反复弹通知</li>
+      </ul>
+    </div>
+    <div class="feat reveal">
+      <span class="tag">GPU</span>
+      <h3>显卡参数，自由勾选</h3>
+      <p>多显卡机器可以指定只显示其中一张，六项参数各自独立开关。</p>
+      <ul>
+        <li>显卡列表带完整型号名称</li>
+        <li>占用 / 温度 / 显存 / 风扇 / 功耗 / 频率</li>
+        <li>只显示你勾选的那几项</li>
+      </ul>
+    </div>
+    <div class="feat reveal">
+      <span class="tag">LAYOUT</span>
+      <h3>顺序与排版，你说了算</h3>
+      <p>拖动排序弹窗里上下拖动即可调整先后，另有竖版 / 横版两种排版。</p>
+      <ul>
+        <li>鼠标拖动直观调整显示顺序</li>
+        <li>竖版适合侧边常驻，横版适合贴顶</li>
+        <li>窗口位置与设置自动记住</li>
+      </ul>
+    </div>
+    <div class="feat reveal">
+      <span class="tag">LIGHT</span>
+      <h3>轻量且随手可用</h3>
+      <p>无边框悬浮窗，可拖动、可置顶、可调透明度，托盘图标随时唤起。</p>
+      <ul>
+        <li>无控制台窗口，安静后台运行</li>
+        <li>右键悬浮窗或托盘图标即可设置</li>
+        <li>支持开机自启</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 界面预览 -->
+<section id="shots" class="wrap">
+  <div class="sec-head reveal">
+    <div class="sec-tag">Preview</div>
+    <h2>界面预览</h2>
+    <p>所有设置都在右键菜单里，常用操作一步到位。</p>
+  </div>
+
+  <div class="shots">
+    <!-- 竖版 -->
+    <div class="shot reveal">
+      <h3>竖版悬浮窗</h3>
+      <p class="cap">纵向排列，适合贴在屏幕侧边长期常驻</p>
+      <div class="stage">
+        <div class="win v">
+          <div class="win-bar">
+            <span class="lv" style="background:#ff5f57"></span>
+            <span class="lv" style="background:#febc2e"></span>
+            <span class="lv" style="background:#28c840"></span>
+            <span class="t">硬件监控 · 竖版</span>
+          </div>
+          <div class="win-body">
+            <div class="row"><span class="k">CPU 使用率</span><span class="v">12%&nbsp;&nbsp;(16 核)</span></div>
+            <div class="row"><span class="k">CPU 温度</span><span class="v">46°C</span></div>
+            <div class="row"><span class="k">CPU 频率</span><span class="v">3.68 GHz</span></div>
+            <div class="row"><span class="k">内存</span><span class="v">58%&nbsp;&nbsp;(9.3GB / 16.0GB)</span></div>
+            <div class="row"><span class="k">网络</span><span class="v">↓ 340KB/s&nbsp;&nbsp;&nbsp;↑ 12KB/s</span></div>
+            <div class="sep"></div>
+            <div class="row gpu"><span class="k">显卡</span><span class="v">占用 2%&nbsp;&nbsp;&nbsp;46°C&nbsp;&nbsp;&nbsp;风扇 34%</span></div>
+            <div class="sep"></div>
+            <div class="row fps"><span class="k">FPS</span><span class="v">100 FPS<span class="tag">启动游戏.exe</span></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 横版 -->
+    <div class="shot wide reveal">
+      <h3>横版悬浮窗</h3>
+      <p class="cap">全部内容压缩成一行，占用高度极小</p>
+      <div class="stage">
+        <div class="win h">
+          <div class="win-body" style="padding:10px 14px">
+            <div class="row" style="gap:16px">
+              <span><span class="k" style="min-width:auto">CPU</span> <span class="v">12%  (16 核)</span></span>
+              <span><span class="k" style="min-width:auto">温度</span> <span class="v">46°C</span></span>
+              <span><span class="k" style="min-width:auto">频率</span> <span class="v">3.68 GHz</span></span>
+              <span><span class="k" style="min-width:auto">内存</span> <span class="v">58%  (9.3GB / 16.0GB)</span></span>
+              <span><span class="k" style="min-width:auto">磁盘</span> <span class="v">C: 3%  (412GB 可用 / 953GB)</span></span>
+              <span><span class="k" style="min-width:auto">网络</span> <span class="v">↓ 340KB/s   ↑ 12KB/s</span></span>
+              <span><span class="k" style="min-width:auto">显卡</span> <span class="v" style="color:var(--accent);font-size:12px">占用 2%   46°C   显存 968/4096 MB</span></span>
+              <span><span class="k" style="min-width:auto">FPS</span> <span class="v" style="color:var(--warn)">100 FPS<span class="tag">启动游戏.exe</span></span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右键菜单 -->
+    <div class="shot reveal">
+      <h3>右键菜单</h3>
+      <p class="cap">勾选显示内容、切换排版、进入各项设置</p>
+      <div class="stage">
+        <div class="menu">
+          <div class="mi"><span class="ar" style="margin-left:0;margin-right:2px">▸</span>显示内容</div>
+          <div class="mi"><span class="ar" style="margin-left:0;margin-right:2px">▸</span>排列方式</div>
+          <div class="mi">调整显示顺序…</div>
+          <div class="mi">显卡设置…</div>
+          <div class="mi">监视 FPS 的程序…</div>
+          <div class="mdiv"></div>
+          <div class="mi"><span class="ck on">✓</span>窗口置顶</div>
+          <div class="mi"><span class="ck"></span>开机自启</div>
+          <div class="mdiv"></div>
+          <div class="mi">退出</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 显卡设置弹窗 -->
+    <div class="shot reveal">
+      <h3>显卡设置弹窗</h3>
+      <p class="cap">选择显示哪一张显卡，并勾选要显示的参数</p>
+      <div class="stage">
+        <div class="dlg narrow">
+          <div class="dlg-bar">显卡设置</div>
+          <div class="dlg-body">
+            <div class="dlg-h">显示的显卡</div>
+            <div class="dlg-row"><span class="rd on"></span>全部显卡</div>
+            <div class="dlg-row"><span class="rd"></span>AMD Radeon(TM) RX 560 Series</div>
+            <div class="dlg-row"><span class="rd"></span>Intel(R) UHD Graphics 630</div>
+            <div class="dlg-h" style="margin-top:11px">显示哪些参数</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">
+              <div class="dlg-row"><span class="ck on">✓</span>占用</div>
+              <div class="dlg-row"><span class="ck on">✓</span>温度</div>
+              <div class="dlg-row"><span class="ck on">✓</span>显存</div>
+              <div class="dlg-row"><span class="ck on">✓</span>风扇</div>
+              <div class="dlg-row"><span class="ck on">✓</span>功耗</div>
+              <div class="dlg-row"><span class="ck on">✓</span>频率</div>
+            </div>
+            <div class="dlg-btns">
+              <button class="mini cancel">取消</button>
+              <button class="mini ok">保存</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 调整顺序弹窗 -->
+    <div class="shot reveal">
+      <h3>调整显示顺序</h3>
+      <p class="cap">鼠标上下拖动条目即可排序，保存后立即生效</p>
+      <div class="stage">
+        <div class="dlg narrow">
+          <div class="dlg-bar">调整显示顺序</div>
+          <div class="dlg-body">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:8px">上下拖动条目调整先后顺序</div>
+            <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:0;padding:5px">
+              <div class="dlg-row"><span class="drag">⠿</span>CPU 使用率</div>
+              <div class="dlg-row"><span class="drag">⠿</span>CPU 温度</div>
+              <div class="dlg-row sel"><span class="drag">⠿</span>内存</div>
+              <div class="dlg-row"><span class="drag">⠿</span>磁盘</div>
+              <div class="dlg-row"><span class="drag">⠿</span>网络</div>
+              <div class="dlg-row"><span class="drag">⠿</span>显卡</div>
+              <div class="dlg-row"><span class="drag">⠿</span>FPS</div>
+            </div>
+            <div class="dlg-btns">
+              <button class="mini cancel">取消</button>
+              <button class="mini ok">保存</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FPS 选择弹窗 -->
+    <div class="shot reveal">
+      <h3>监视 FPS 的程序</h3>
+      <p class="cap">列出可监视的程序与实时帧率，并设置帧率后缀</p>
+      <div class="stage">
+        <div class="dlg">
+          <div class="dlg-bar">选择监视 FPS 的程序</div>
+          <div class="dlg-body">
+            <div class="fpslist">
+              <div class="fl-head">选择要监视的程序（双击直接确定）：</div>
+              <div class="fl-row sel"><span class="n">自动（跟随前台程序）</span></div>
+              <div class="fl-row"><span class="n">启动游戏.exe</span><span class="t">Plants vs. Zombies RELEASE</span><span class="f">100 FPS</span></div>
+              <div class="fl-row"><span class="n">chrome.exe</span><span class="t">新标签页 - Google Chrome</span><span class="f">60 FPS</span></div>
+              <div class="fl-row"><span class="n">Code.exe</span><span class="t">hardware_monitor.pyw</span><span class="f">30 FPS</span></div>
+              <div class="fl-opts">
+                <span>数值后面显示：</span>
+                <span style="display:flex;align-items:center;gap:6px"><span class="ck"></span>窗口标题</span>
+                <span style="display:flex;align-items:center;gap:6px"><span class="ck on">✓</span>程序名</span>
+              </div>
+              <div class="dlg-btns">
+                <button class="mini cancel">取消</button>
+                <button class="mini ok">确定</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 快速开始 -->
+<section id="start" class="wrap">
+  <div class="sec-head reveal">
+    <div class="sec-tag">Get Started</div>
+    <h2>三步就能用上</h2>
+    <p>不需要安装、不需要配置，解压即用。</p>
+  </div>
+  <div class="steps">
+    <div class="step reveal">
+      <h3>解压下载包</h3>
+      <p>下载「硬件监控.zip」后解压，把整个文件夹放到你想放的位置，U 盘里也能跑。</p>
+    </div>
+    <div class="step reveal">
+      <h3>双击运行</h3>
+      <p>双击文件夹里的「硬件监控.exe」即可，悬浮窗出现在桌面上，托盘同时出现图标。</p>
+    </div>
+    <div class="step reveal">
+      <h3>右键设置</h3>
+      <p>在悬浮窗或托盘图标上点右键，勾选要显示的内容、调整顺序与显卡参数。</p>
+    </div>
+  </div>
+</section>
+
+<!-- 运行环境 -->
+<section id="specs" class="wrap">
+  <div class="sec-head reveal">
+    <div class="sec-tag">Specs</div>
+    <h2>运行环境与技术栈</h2>
+    <p>面向 Windows 桌面，开箱即用。</p>
+  </div>
+  <dl class="specs reveal">
+    <div class="spec-row"><dt>操作系统</dt><dd>Windows 10 / 11（64 位）</dd></div>
+    <div class="spec-row"><dt>安装方式</dt><dd>免安装：下载 <code>硬件监控.zip</code> 解压后，双击文件夹内的 <code>硬件监控.exe</code> 即可运行。exe 需要同目录的依赖文件配合，请保留整个文件夹；配置写入同目录的 <code>config.json</code>，不污染系统</dd></div>
+    <div class="spec-row"><dt>界面形态</dt><dd>无边框悬浮窗 + 系统托盘图标，支持置顶、透明度、拖动定位、开机自启</dd></div>
+    <div class="spec-row"><dt>监控指标</dt><dd class="chips">
+      <span class="chip">CPU 使用率</span><span class="chip">CPU 温度</span><span class="chip">CPU 频率</span>
+      <span class="chip">内存</span><span class="chip">磁盘</span><span class="chip">网络</span>
+      <span class="chip">显卡</span><span class="chip">FPS</span><span class="chip">帧时间</span>
+      <span class="chip">1% / 0.1% 低帧</span><span class="chip">硬盘温度</span><span class="chip">主板温度</span>
+      <span class="chip">系统风扇</span><span class="chip">电池</span><span class="chip">开机时长</span>
+    </dd></div>
+    <div class="spec-row"><dt>显卡参数</dt><dd class="chips">
+      <span class="chip">占用</span><span class="chip">温度</span><span class="chip">显存</span>
+      <span class="chip">风扇</span><span class="chip">功耗</span><span class="chip">频率</span>
+    </dd></div>
+    <div class="spec-row"><dt>底层组件</dt><dd class="chips">
+      <span class="chip">Python</span><span class="chip">tkinter</span><span class="chip">psutil</span>
+      <span class="chip">LibreHardwareMonitor</span><span class="chip">pythonnet</span>
+      <span class="chip">PresentMon</span><span class="chip">Pillow</span><span class="chip">pystray</span>
+    </dd></div>
+    <div class="spec-row"><dt>网络行为</dt><dd>纯本地运行，不联网、不上传任何数据</dd></div>
+  </dl>
+</section>
+
+<!-- 常见问题 -->
+<section id="faq" class="wrap">
+  <div class="sec-head reveal">
+    <div class="sec-tag">FAQ</div>
+    <h2>常见问题</h2>
+    <p>第一次运行最容易卡在这几个地方，先看看有没有你遇到的。</p>
+  </div>
+  <div class="log reveal">
+
+    <div class="log-item">
+      <div class="log-hd">
+        <span class="log-ver">打不开</span>
+        <span class="log-date">Windows 11</span>
+        <span class="log-tag">必看</span>
+      </div>
+      <ul>
+        <li><b>提示「智能应用控制已阻止可能不安全的应用」</b>——这是 Windows 11 自带的「智能应用控制」(Smart App Control) 拦的。它只允许运行<b>带数字签名</b>或<b>已经有大量用户在使用</b>的程序，个人开发的小工具两条都不占，所以被拦。这不是中毒，也不是程序坏了。</li>
+        <li>这个弹窗<b>没有「仍要运行」按钮</b>，只能二选一：关掉智能应用控制，或者换个方式运行。</li>
+        <li><b>办法一（最彻底）</b>：换带数字签名的版本。签名版的 <b>硬件监控.exe</b> 会被系统直接放行，什么都不用改；发布进度以仓库 Release 为准。</li>
+        <li><b>办法二（现在就能用）</b>：关掉智能应用控制。设置 → 隐私和安全性 → Windows 安全中心 → 应用和浏览器控制 → 智能应用控制设置 → 选「关闭」，然后重新双击即可。<b>注意</b>：部分旧版本 Windows 关掉之后就没法从设置里再打开（要重置系统才能恢复），所以建议先把 Windows 更新打全再操作。</li>
+        <li><b>办法三（不想动系统防护）</b>：装 Python 3.14 后用源码方式运行，直接绕开这项检查，详见下面一条。</li>
+        <li><b>下面这些办法没用，别浪费时间</b>：点「仍要运行」（根本没有这个按钮）、右键属性里勾「解除锁定」、以管理员身份运行、命令行启动、加杀毒软件白名单、以及自己做的自签名证书——微软的受信任根计划不认本地自签根证书，这是官方明确说明的。</li>
+      </ul>
+    </div>
+
+    <div class="log-item">
+      <div class="log-hd">
+        <span class="log-ver">源码运行</span>
+        <span class="log-date">备选方案</span>
+        <span class="log-tag">免签名</span>
+      </div>
+      <ul>
+        <li>不想关智能应用控制的话，可以直接用源码跑——Python 解释器本身是签好名的，源码不经过这项检查。</li>
+        <li>从 <a href="https://github.com/robotcn1130/hardware_monitor" target="_blank" rel="noopener" style="color:var(--accent)">GitHub 仓库</a>把源码下载下来，装好 <b>Python 3.14</b> 后，在源码目录依次执行：<br>
+          <code>pip install -r requirements.txt</code><br>
+          <code>pythonw hardware_monitor.pyw</code></li>
+        <li>功能与 exe 版完全一致，只是需要自己装一次 Python。</li>
+      </ul>
+    </div>
+
+    <div class="log-item">
+      <div class="log-hd">
+        <span class="log-ver">权限</span>
+        <span class="log-date">温度 / 帧率</span>
+        <span class="log-tag">说明</span>
+      </div>
+      <ul>
+        <li><b>为什么一启动就弹 UAC 要管理员权限？</b>因为读 CPU 温度和主板温度要访问硬件的 I/O 端口，抓游戏帧率要开系统级的 ETW 会话，这两件事 Windows 只让管理员做。</li>
+        <li>不点「是」也能跑，只是温度和帧率那几项会显示「需管理员权限」或没有数值，其余指标照常。</li>
+      </ul>
+    </div>
+
+    <div class="log-item">
+      <div class="log-hd">
+        <span class="log-ver">误报</span>
+        <span class="log-date">杀毒软件</span>
+        <span class="log-tag old">说明</span>
+      </div>
+      <ul>
+        <li>少数杀毒软件会对打包后的 exe 报警。原因是这类打包工具会把所有依赖塞进一个自解压程序里，行为上跟某些恶意软件很像，属于<b>典型误报</b>。</li>
+        <li>程序<b>不联网、不注入任何进程、不读取游戏内存</b>，源码可自行审阅。确认无害后在杀毒软件里加白名单即可。</li>
+        <li>不放心的话，可以把 <code>硬件监控.zip</code> 传进 <b>VirusTotal</b> 扫一遍再解压。</li>
+      </ul>
+    </div>
+
+    <div class="log-item">
+      <div class="log-hd">
+        <span class="log-ver">开源</span>
+        <span class="log-date">MIT 许可证</span>
+        <span class="log-tag">源码可查</span>
+      </div>
+      <ul>
+        <li>本项目<b>已完整开源</b>，采用 <b>MIT 许可证</b>，仓库在
+          <a href="https://github.com/robotcn1130/hardware_monitor" target="_blank" rel="noopener" style="color:var(--accent)">GitHub</a>。
+          源码可以自己审阅、自己编译，也欢迎提 Issue 和 PR。</li>
+        <li>仓库里放的是源码和必要的第三方组件，打包脚本也一并公开——想自己出一份包，按 README 里的说明跑一遍即可；不想打包也可以直接用源码运行。</li>
+      </ul>
+    </div>
+
+  </div>
+</section>
+
+<!-- 更新日志 -->
+<section id="changelog" class="wrap">
+  <div class="sec-head reveal">
+    <div class="sec-tag">Changelog</div>
+    <h2>更新日志</h2>
+    <p>每一版改了什么都写在这里。当前版本 <b style="color:var(--accent)">v2.1.0</b>。</p>
+  </div>
+  <div class="log reveal">
+
+    <div class="log-item">
+      <div class="log-hd">
+        <span class="log-ver">v2.1.0</span>
+        <span class="log-date">2026-09-13</span>
+        <span class="log-tag">修复与体验</span>
+      </div>
+      <ul>
+        <li><b>退出更干净</b>：修掉了「关掉程序后任务管理器里还留着后台进程」的问题，退出时会一并收走帧率采集用到的子进程</li>
+        <li><b>菜单可以连着勾</b>：在「显示内容」里勾选指标时，菜单不再一点就关，可以一口气勾好几项；鼠标移开、或点一下主窗口才收起</li>
+        <li><b>菜单不再被挡住</b>：修好了窗口置顶时右键菜单被悬浮窗压住一部分的问题</li>
+        <li><b>连续右键不再叠菜单</b>：再点一次右键会先收掉上一个，不会一层层叠出来</li>
+        <li><b>告警可以逐项关</b>：每一项高温 / 高占用告警前面都有独立开关，不想要的直接关掉，不用把阈值调到 0</li>
+        <li><b>能看到版本号了</b>：右键菜单和托盘菜单底部会显示当前版本，反馈问题时方便说清楚是哪一版</li>
+      </ul>
+    </div>
+
+    <div class="log-item">
+      <div class="log-hd">
+        <span class="log-ver">v2.0.0</span>
+        <span class="log-date">2026-09-13</span>
+        <span class="log-tag">大版本</span>
+      </div>
+      <ul>
+        <li><b>新增帧时间与低帧</b>：除了平均帧率，还能看到「帧时间」和 <b>1% / 0.1% 低帧</b>——也就是最卡的那百分之一帧能跑到多少，比平均帧率更能反映真实手感</li>
+        <li><b>新增历史曲线</b>：每一项右侧多了一条小折线，一眼看出最近一两分钟的走势，不用盯着数字猜</li>
+        <li><b>新增阈值告警</b>：CPU、显卡、硬盘温度以及占用率超过设定值时，数值会变红并弹一条系统通知；同一项两分钟内不会重复打扰</li>
+        <li><b>新增四项传感器</b>：主板温度、硬盘温度、系统风扇转速、电池状态（台式机显示「未检测到电池」属正常）</li>
+        <li><b>帧率采集更省</b>：改成常驻采集，不再每两秒重新启动一次，开销更低、读数更稳</li>
+        <li><b>新增「设置」窗口</b>：告警开关、阈值调整、曲线开关集中在一处，菜单不再越拉越长</li>
+      </ul>
+    </div>
+
+    <div class="log-item">
+      <div class="log-hd">
+        <span class="log-ver">v1.0</span>
+        <span class="log-date">初始版本</span>
+        <span class="log-tag old">已归档</span>
+      </div>
+      <ul>
+        <li>桌面悬浮窗：CPU 占用 / 温度 / 频率、内存、磁盘、网络、显卡、FPS、开机时长，共 9 项</li>
+        <li>竖版 / 横版两种版式，可置顶、调透明度、拖动定位、开机自启</li>
+        <li>系统托盘图标动态显示 CPU 占用，右键即可勾选要显示哪些指标</li>
+      </ul>
+    </div>
+
+  </div>
+</section>
+
+<!-- 下载 -->
+<section id="download" class="wrap">
+  <div class="cta-box reveal">
+    <h2>把它放进你的屏幕角落</h2>
+    <p>程序为「解压即用」形态：下载 <b>硬件监控.zip</b> 解压到任意目录，双击其中的「硬件监控.exe」即可运行。程序由 exe 与同目录的依赖文件共同组成，请勿单独拷走 exe。需要读取硬件传感器与游戏帧率，建议以管理员身份运行以获得完整数据。</p>
+    <div class="hero-btns" style="margin-top:0">
+      <a class="btn btn-primary" href="硬件监控.zip" download>
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        下载 硬件监控.zip
+      </a>
+      <a class="btn btn-ghost" href="#shots">再看看界面</a>
+    </div>
+    <p style="margin-top:20px;font-size:13.5px;color:var(--muted)">
+      项目已开源，采用 MIT 许可证，源码在
+      <a href="https://github.com/robotcn1130/hardware_monitor" target="_blank" rel="noopener" style="color:var(--accent)">GitHub</a>，
+      历史版本可从
+      <a href="https://github.com/robotcn1130/hardware_monitor/releases" target="_blank" rel="noopener" style="color:var(--accent)">Releases</a> 下载。
+    </p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="fl">
+      <a href="#metrics">监控指标</a>
+      <a href="#features">功能亮点</a>
+      <a href="#shots">界面预览</a>
+      <a href="#start">快速开始</a>
+      <a href="#specs">运行环境</a>
+      <a href="#faq">常见问题</a>
+      <a href="#changelog">更新日志</a>
+      <a href="https://github.com/robotcn1130/hardware_monitor" target="_blank" rel="noopener">源码仓库</a>
+    </div>
+    <div>硬件监控 · 轻量硬件状态悬浮窗 &nbsp;|&nbsp; 纯本地运行，不联网不上传 &nbsp;|&nbsp; MIT 开源</div>
+  </div>
+</footer>
+
+<script>
+  // 滚动出现动画
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach((e, i) => {
+      if (e.isIntersecting) {
+        const delay = (i % 6) * 70;
+        setTimeout(() => e.target.classList.add('in'), delay);
+        io.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.12, rootMargin: '0px 0px -60px 0px' });
+  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+</script>
+
+</body>
+</html>

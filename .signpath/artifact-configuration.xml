@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath 产物配置（仓库内的参考副本）
+
+  ⚠️ 真正生效的配置在 SignPath 控制台里：项目 → Artifact Configurations → Add
+     → 选「Custom」→ 把下面的 XML 粘进去。
+     本文件只是留一份可审查、可进版本管理的副本，改了这里不会自动同步过去。
+
+  设计要点：**只签我们自己的主程序**。
+  SignPath 的条款只允许签项目自己的代码，第三方二进制（PresentMon、PawnIO、
+  LibreHardwareMonitor 及其依赖）一律不签，原样通过。
+
+  上传到 SignPath 的产物是 GitHub Actions 用 actions/upload-artifact 打的 ZIP，
+  所以根元素必须是 zip-file，里面的 path 是相对于 ZIP 根的路径。
+
+  如果 SignPath 报「有文件未被匹配」，说明你的产物结构和这里对不上——最常见的是
+  多了一层目录。把 path 改成 `**/硬件监控.exe` 即可。
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <!-- 本项目唯一的自有可执行文件 -->
+    <pe-file path="硬件监控.exe">
+      <authenticode-sign/>
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

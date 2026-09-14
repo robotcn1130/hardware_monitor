@@ -1,0 +1,85 @@
+name: 构建
+
+# 平时提代码 / 提 PR 跑的检查：语法能不能过、能不能打包成功。
+# 真正带签名的发布在 release.yml 里，由打 tag 触发。
+on:
+  push:
+    branches: [main, master]
+    paths-ignore:
+      - '**.md'
+      - 'web/**'
+      - '工作日志/**'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ── 1. 构建：这是硬性门槛，失败就不算通过 ──────────────────────────────
+  build:
+    name: 语法检查与打包
+    runs-on: windows-latest
+    steps:
+      - name: 取出代码
+        uses: actions/checkout@v7
+
+      - name: 安装 Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+          cache: pip
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: 语法检查
+        run: >-
+          python -m py_compile
+          hardware_monitor.pyw
+          hm_config.py hm_fps.py hm_log.py hm_sensors.py hm_theme.py
+          hm_ui.py hm_utils.py hm_widgets.py
+          build.py package.py sign.py
+
+      - name: 打包
+        run: python build.py
+
+      - name: 上传未签名产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-windows
+          path: dist/硬件监控/
+          if-no-files-found: error
+          overwrite: true
+
+  # ── 2. 自动化测试：参考项，不阻塞 ────────────────────────────────────
+  # GitHub 托管的运行器没有真实的交互桌面会话，tkinter 建窗口、托盘图标、
+  # 读硬件传感器这类测试在这里可能失败。所以这一项设成 continue-on-error，
+  # 失败时只在日志里提示，不挡住上面的构建。
+  # 界面和硬件的真机回归，由维护者在本地按文档里的清单跑。
+  tests:
+    name: 自动化测试（参考，不阻塞）
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - name: 取出代码
+        uses: actions/checkout@v7
+
+      - name: 安装 Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+          cache: pip
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: 冒烟测试
+        run: python tests/smoke_test.py
+
+      - name: 界面与逻辑测试
+        run: python tests/ui_test.py

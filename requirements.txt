@@ -1,0 +1,6 @@
+# 运行依赖（装完即可用源码运行本程序）
+psutil>=6.0
+pystray>=0.19
+pillow>=10.0
+pythonnet>=3.0
+wmi>=1.5

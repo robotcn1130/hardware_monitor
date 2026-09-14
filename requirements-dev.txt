@@ -1,0 +1,3 @@
+# 开发/打包额外依赖（普通用户运行不需要）
+-r requirements.txt
+pyinstaller>=6.0
