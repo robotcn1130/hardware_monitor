@@ -7,10 +7,20 @@
 
 用法：
     python build.py
+
+打包完会自动尝试给 exe 签名。证书从环境变量读（见下），**没配就跳过、不报错**：
+
+    HM_SIGN_SHA1=证书指纹         本机证书存储（云签名服务走这条）
+    HM_SIGN_SUBJECT=证书主题名     本机证书存储，按主题名选
+    HM_SIGN_PFX=路径 HM_SIGN_PASS=密码   老式 PFX（2023 年前发的证书）
+
+签名细节和证书怎么来，见 sign.py 开头的说明。正式发布不需要在本机配证书——
+SignPath 路线的签名在 CI 里做（.github/workflows/release.yml）。
 """
 import os
 import sys
 import shutil
+import subprocess
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -81,6 +91,40 @@ def _make_icon():
         print(f"生成图标失败（忽略）：{exc}")
 
 
+def _sign(out):
+    """打包完给 exe 签名。
+
+    证书从环境变量读——**私钥绝不能进仓库**，所以不走配置文件、不走命令行参数
+    （命令行参数会留在 shell 历史和进程列表里）。没配环境变量时只提示、不报错，
+    保证普通开发者打完包就能用。
+
+    真正的签名逻辑在 sign.py 里，这里只是把环境变量翻译成它的参数。
+    它在 dist 目录下扫「没有有效签名」的 PE 文件，只签没签过的。
+    """
+    sha1 = os.environ.get("HM_SIGN_SHA1")
+    subject = os.environ.get("HM_SIGN_SUBJECT")
+    pfx = os.environ.get("HM_SIGN_PFX")
+
+    if not (sha1 or subject or pfx):
+        print()
+        print("跳过签名：未配置证书（设 HM_SIGN_SHA1 / HM_SIGN_SUBJECT / HM_SIGN_PFX 后重跑）")
+        return
+
+    args = [sys.executable, os.path.join(HERE, "sign.py"), "--dir", out]
+    if sha1:
+        args += ["--sha1", sha1]
+    elif subject:
+        args += ["--n", subject]
+    else:
+        args += ["--pfx", pfx]
+        if os.environ.get("HM_SIGN_PASS"):
+            args += ["--pass", os.environ["HM_SIGN_PASS"]]
+
+    print()
+    # 签名失败不算打包失败：产物本身是好的，只是没签名，用户还能跑
+    subprocess.run(args, check=False)
+
+
 def main():
     _check_sources()
     _make_icon()
@@ -147,6 +191,10 @@ def main():
         if not os.path.exists(p):
             print("自检缺失：", p)
             ok = False
+
+    # 自检过了才签名：产物是残的就没必要浪费一次签名请求
+    if ok:
+        _sign(out)
 
     total = sum(
         os.path.getsize(os.path.join(r, f))

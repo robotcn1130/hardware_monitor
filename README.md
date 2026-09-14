@@ -156,6 +156,19 @@ app.ico                         程序图标
 
 `build.py` 会检查它们是否齐全，缺任何一个都会直接报错退出。
 
+打包完成后会自动尝试签名。**证书要从环境变量给，没配就直接跳过**（不影响打包）：
+
+```powershell
+$env:HM_SIGN_SHA1 = "证书指纹"        # 本机证书存储，云签名服务走这条
+python build.py
+```
+
+可用的变量：`HM_SIGN_SHA1`（指纹）、`HM_SIGN_SUBJECT`（主题名）、
+`HM_SIGN_PFX` + `HM_SIGN_PASS`（老式 PFX 文件）。走 SignPath 路线时**本机不用配任何证书**，
+签名在 CI 里完成，见下一节。
+
+> 私钥不要写进配置文件或命令行参数——前者会被提交，后者会留在 shell 历史和进程列表里。
+
 ---
 
 ## 关于 Windows 智能应用控制（Smart App Control）
